@@ -78,4 +78,5 @@ To use this to its full potential run the Streamflix.exe and addon simultaneousl
 <br>
 <br>
 <br>
-This uses AI btw, specifically Gemini, this is vibe coded.
+This uses AI btw, specifically Gemini, this has been vibe coded for a few hours.
+
