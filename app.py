@@ -7,7 +7,7 @@ app = Flask(__name__)
 API_KEY = "6363323958264147b046d7f77a16d48b"
 BASE_URL = "https://api.themoviedb.org/3"
 
-# In-memory storage for last searched items
+# In-memory storage for last clicked/viewed items
 last_searched_cache = []
 
 def fetch_tmdb(endpoint, params=None):
@@ -64,12 +64,7 @@ def get_category(cat_type):
     }
 
     if cat_type == "last_searched":
-        sorted_cache = sorted(
-            last_searched_cache, 
-            key=lambda x: x.get('popularity', 0), 
-            reverse=True
-        )
-        return jsonify({"results": sorted_cache})
+        return jsonify({"results": last_searched_cache})
 
     if cat_type in category_map:
         endpoint, params = category_map[cat_type]
@@ -84,29 +79,66 @@ def get_category(cat_type):
 
 @app.route('/api/search')
 def search():
-    """Searches TMDB and saves results into the last searched memory cache."""
+    """Searches TMDB without modifying the last searched cache."""
     query = request.args.get('q', '')
     if not query:
         return jsonify([])
 
     data = fetch_tmdb("/search/multi", {"query": query})
     results = data.get('results', [])
-    
-    for item in results:
-        if item.get('media_type') in ['movie', 'tv']:
-            if not any(cached['id'] == item['id'] for cached in last_searched_cache):
-                last_searched_cache.append(item)
-
     return jsonify(results)
 
-# --- NEW TV SHOW SEASON & EPISODE ENDPOINTS ---
+@app.route('/api/track_click', methods=['POST'])
+def track_click():
+    """Saves a clicked movie/series into the last searched memory cache."""
+    item = request.get_json()
+    if not item or 'id' not in item:
+        return jsonify({"status": "error", "message": "Invalid item payload"}), 400
+
+    # Remove existing record if present to re-insert at the top (most recent)
+    global last_searched_cache
+    last_searched_cache = [c for c in last_searched_cache if c.get('id') != item['id']]
+    last_searched_cache.insert(0, item)
+
+    return jsonify({"status": "success"})
+
+# --- MOVIE DETAILS ENDPOINT ---
+
+@app.route('/api/movie/<int:movie_id>')
+def get_movie_details(movie_id):
+    """Fetches full movie details including runtime and US release certification rating."""
+    data = fetch_tmdb(f"/movie/{movie_id}", {"append_to_response": "release_dates"})
+    
+    # Extract US Content Rating (e.g. PG-13, R, PG)
+    age_rating = "NR"
+    release_dates = data.get('release_dates', {}).get('results', [])
+    for country_data in release_dates:
+        if country_data.get('iso_3166_1') == 'US':
+            for r in country_data.get('release_dates', []):
+                cert = r.get('certification')
+                if cert:
+                    age_rating = cert
+                    break
+            break
+
+    return jsonify({
+        "id": data.get("id"),
+        "title": data.get("title"),
+        "overview": data.get("overview"),
+        "vote_average": data.get("vote_average", 0),
+        "release_date": data.get("release_date"),
+        "runtime": data.get("runtime", 0),
+        "poster_path": data.get("poster_path"),
+        "age_rating": age_rating
+    })
+
+# --- TV SHOW SEASON & EPISODE ENDPOINTS ---
 
 @app.route('/api/tv/<int:tv_id>/seasons')
 def get_tv_seasons(tv_id):
     """Fetches details for a TV series, including its seasons list."""
     data = fetch_tmdb(f"/tv/{tv_id}")
     seasons = data.get('seasons', [])
-    # Filter out Season 0 (specials) if preferred, or keep all valid seasons
     valid_seasons = [s for s in seasons if s.get('season_number', 0) > 0]
     return jsonify({
         "name": data.get('name', 'TV Series'),
