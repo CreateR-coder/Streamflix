@@ -115,6 +115,12 @@
             overflow: hidden;
         }
 
+        .hero-buttons {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
         .btn-play {
             background-color: #ffffff;
             color: #000000;
@@ -129,6 +135,28 @@
 
         .btn-play:hover {
             background-color: rgba(255, 255, 255, 0.75);
+        }
+
+        .btn-save-icon {
+            background-color: rgba(109, 109, 110, 0.7);
+            color: #ffffff;
+            border: none;
+            padding: 10px 16px;
+            font-size: 1.1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-save-icon:hover {
+            background-color: rgba(109, 109, 110, 0.4);
+        }
+
+        .btn-save-icon.saved-temp {
+            background-color: #2e7d32 !important;
         }
 
         /* Containers & Grids */
@@ -227,6 +255,31 @@
             font-size: 0.75rem;
             font-weight: bold;
             border-radius: 3px;
+            z-index: 2;
+        }
+
+        .movie-card .card-save-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(0, 0, 0, 0.65);
+            border: none;
+            color: #fff;
+            font-size: 0.9rem;
+            padding: 4px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 2;
+            transition: background 0.3s, transform 0.2s;
+        }
+
+        .movie-card .card-save-btn:hover {
+            background: #E50914;
+            transform: scale(1.1);
+        }
+
+        .movie-card .card-save-btn.saved-temp {
+            background: #2e7d32 !important;
         }
 
         /* Controls & Pagination */
@@ -530,6 +583,13 @@
             margin-top: 5px;
         }
 
+        .modal-action-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            align-items: center;
+        }
+
         .btn-action-modal {
             background-color: #E50914;
             color: #ffffff;
@@ -539,13 +599,30 @@
             font-weight: bold;
             border-radius: 4px;
             cursor: pointer;
-            margin-top: 15px;
-            align-self: flex-start;
             transition: background-color 0.2s;
         }
 
         .btn-action-modal:hover {
             background-color: #f40612;
+        }
+
+        .btn-save-modal {
+            background-color: rgba(109, 109, 110, 0.7);
+            color: #ffffff;
+            border: none;
+            padding: 12px 18px;
+            font-size: 1.1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-save-modal:hover {
+            background-color: rgba(109, 109, 110, 0.4);
+        }
+
+        .btn-save-modal.saved-temp {
+            background-color: #2e7d32 !important;
         }
     </style>
 </head>
@@ -567,7 +644,10 @@
             <div class="hero-content">
                 <h1 class="hero-title" id="hero-title">Loading...</h1>
                 <p class="hero-overview" id="hero-overview"></p>
-                <button class="btn-play" id="hero-btn">Watch Now</button>
+                <div class="hero-buttons">
+                    <button class="btn-play" id="hero-btn">Watch Now</button>
+                    <button class="btn-save-icon" id="hero-save-btn" title="Save Movie">💾</button>
+                </div>
             </div>
         </div>
 
@@ -600,7 +680,7 @@
                     <option value="action_series">Top 1000 Action Series</option>
                     <option value="comedy_movies">Top 1000 Comedy Movies</option>
                     <option value="comedy_series">Top 1000 Comedy Series</option>
-                    <option value="last_searched">Last Searched Movies</option>
+                    <option value="saved_movies">Saved Movies</option>
                 </select>
             </div>
 
@@ -636,7 +716,10 @@
                         <span id="modal-movie-age" class="age-badge"></span>
                     </div>
                     <p id="modal-movie-desc" class="movie-desc"></p>
-                    <button id="modal-movie-action-btn" class="btn-action-modal">Watch Now</button>
+                    <div class="modal-action-row">
+                        <button id="modal-movie-action-btn" class="btn-action-modal">Watch Now</button>
+                        <button id="modal-movie-save-btn" class="btn-save-modal" title="Save Movie">💾</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -667,6 +750,56 @@
         const maxPages = 50;
         let activeTvId = null;
 
+        // Tracks saved movie IDs on client side so button state persists ✓
+        const savedMovieIds = new Set();
+
+        function updateSaveButtonVisualState(btn, movieId) {
+            if (!btn) return;
+            if (savedMovieIds.has(movieId)) {
+                btn.innerText = '✓';
+            } else {
+                btn.innerText = '💾';
+            }
+        }
+
+        function triggerSaveAnimation(btn, movieId) {
+            if (!btn) return;
+            savedMovieIds.add(movieId);
+            btn.innerText = '✓';
+            btn.classList.add('saved-temp');
+            
+            setTimeout(() => {
+                btn.classList.remove('saved-temp');
+            }, 2000);
+
+            // Synchronize all instances of save buttons for this movie on screen
+            document.querySelectorAll(`[data-save-id="${movieId}"]`).forEach(el => {
+                el.innerText = '✓';
+            });
+        }
+
+        function saveMovie(item, btnElement, e) {
+            if (e) e.stopPropagation();
+
+            if (btnElement) {
+                triggerSaveAnimation(btnElement, item.id);
+            }
+
+            fetch('/api/save_movie', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item)
+            })
+            .then(res => res.json())
+            .then(data => {
+                const categorySelector = document.getElementById('category-selector');
+                if (categorySelector.value === 'saved_movies' && document.getElementById('categories-tab').classList.contains('active')) {
+                    loadCategoryData();
+                }
+            })
+            .catch(err => console.error("Error saving movie:", err));
+        }
+
         function trackClick(item) {
             fetch('/api/track_click', {
                 method: 'POST',
@@ -689,20 +822,26 @@
             if (item.first_air_date || item.media_type === 'tv' || item.name) {
                 openTvModal(item.id);
             } else {
-                openMovieModal(item.id);
+                openMovieModal(item);
             }
         }
 
         /* --- MOVIE MODAL LOGIC --- */
-        function openMovieModal(movieId) {
+        function openMovieModal(item) {
+            const movieId = item.id;
             const modal = document.getElementById('movie-modal');
-            document.getElementById('modal-movie-title').innerText = "Loading...";
+            document.getElementById('modal-movie-title').innerText = item.title || "Loading...";
             document.getElementById('modal-movie-desc').innerText = "";
             document.getElementById('modal-movie-rating').innerText = "";
             document.getElementById('modal-movie-year').innerText = "";
             document.getElementById('modal-movie-runtime').innerText = "";
             document.getElementById('modal-movie-age').innerText = "";
-            document.getElementById('modal-movie-poster').src = "https://via.placeholder.com/180x270?text=Loading";
+            document.getElementById('modal-movie-poster').src = item.poster_path ? `${IMAGE_BASE_URL}${item.poster_path}` : "https://via.placeholder.com/180x270?text=Loading";
+
+            const saveBtn = document.getElementById('modal-movie-save-btn');
+            saveBtn.setAttribute('data-save-id', movieId);
+            updateSaveButtonVisualState(saveBtn, movieId);
+            saveBtn.onclick = (e) => saveMovie(item, saveBtn, e);
 
             modal.classList.add('active');
 
@@ -712,31 +851,26 @@
                     document.getElementById('modal-movie-title').innerText = data.title || "Movie Details";
                     document.getElementById('modal-movie-desc').innerText = data.overview || "No description available.";
                     
-                    // Rating calculation: rounded to nearest 10%, divided by 10 => x/10 format
                     if (data.vote_average !== undefined) {
                         let percent = Math.round((data.vote_average * 10) / 10) * 10;
                         let ratingOut = percent / 10;
                         document.getElementById('modal-movie-rating').innerText = `${ratingOut}/10 Rating`;
                     }
 
-                    // Release Year
                     if (data.release_date) {
                         const year = data.release_date.split('-')[0];
                         document.getElementById('modal-movie-year').innerText = `(${year})`;
                     }
 
-                    // Runtime conversion to Xhr Ymins
                     if (data.runtime) {
                         const hrs = Math.floor(data.runtime / 60);
                         const mins = data.runtime % 60;
                         document.getElementById('modal-movie-runtime').innerText = `${hrs}hr ${mins}mins`;
                     }
 
-                    // Age Rating logic
                     const ageRating = data.age_rating || "NR";
                     document.getElementById('modal-movie-age').innerText = ageRating;
 
-                    // Button text decision logic
                     const restrictedRatings = ["15+", "16+", "R", "18+"];
                     const btn = document.getElementById('modal-movie-action-btn');
                     
@@ -748,7 +882,6 @@
                     btn.innerText = isRestricted ? "Watch Now" : "Play";
                     btn.onclick = () => navigateToDetail(movieId);
 
-                    // Poster Thumbnail
                     if (data.poster_path) {
                         document.getElementById('modal-movie-poster').src = `${IMAGE_BASE_URL}${data.poster_path}`;
                     }
@@ -855,8 +988,14 @@
 
             card.innerHTML = `
                 ${rank ? `<div class="badge">#${rank}</div>` : ''}
+                <button class="card-save-btn" data-save-id="${item.id}" title="Save Movie">💾</button>
                 <img src="${posterPath}" alt="${item.title || item.name}">
             `;
+
+            const saveBtn = card.querySelector('.card-save-btn');
+            updateSaveButtonVisualState(saveBtn, item.id);
+            saveBtn.onclick = (e) => saveMovie(item, saveBtn, e);
+
             card.onclick = () => handleItemClick(item);
             return card;
         }
@@ -872,6 +1011,11 @@
                         document.getElementById('hero-title').innerText = hero.title || hero.name;
                         document.getElementById('hero-overview').innerText = hero.overview;
                         document.getElementById('hero-btn').onclick = () => handleItemClick(hero);
+
+                        const heroSaveBtn = document.getElementById('hero-save-btn');
+                        heroSaveBtn.setAttribute('data-save-id', hero.id);
+                        updateSaveButtonVisualState(heroSaveBtn, hero.id);
+                        heroSaveBtn.onclick = (e) => saveMovie(hero, heroSaveBtn, e);
                     }
 
                     const renderRow = (id, list) => {
@@ -922,12 +1066,16 @@
                         return;
                     }
 
+                    if (category === 'saved_movies') {
+                        list.forEach(m => savedMovieIds.add(m.id));
+                    }
+
                     const startRank = (currentPage - 1) * 20 + 1;
                     list.forEach((item, index) => {
-                        grid.appendChild(createMovieCard(item, category === 'last_searched' ? null : startRank + index));
+                        grid.appendChild(createMovieCard(item, startRank + index));
                     });
 
-                    renderPagination(category === 'last_searched' ? 1 : maxPages);
+                    renderPagination(category === 'saved_movies' ? 1 : maxPages);
                 })
                 .catch(err => {
                     grid.innerHTML = '<p style="color:#E50914;">Failed to load items. Please try again.</p>';
