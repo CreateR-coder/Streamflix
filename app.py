@@ -7,7 +7,8 @@ app = Flask(__name__)
 API_KEY = "6363323958264147b046d7f77a16d48b"
 BASE_URL = "https://api.themoviedb.org/3"
 
-# In-memory storage for last clicked/viewed items
+# In-memory storage for saved movies and last clicked/viewed items
+saved_movies_cache = []
 last_searched_cache = []
 
 def fetch_tmdb(endpoint, params=None):
@@ -63,8 +64,8 @@ def get_category(cat_type):
         "comedy_series": ("/discover/tv", {"with_genres": "35", "sort_by": "popularity.desc"})
     }
 
-    if cat_type == "last_searched":
-        return jsonify({"results": last_searched_cache})
+    if cat_type == "saved_movies":
+        return jsonify({"results": saved_movies_cache})
 
     if cat_type in category_map:
         endpoint, params = category_map[cat_type]
@@ -79,7 +80,7 @@ def get_category(cat_type):
 
 @app.route('/api/search')
 def search():
-    """Searches TMDB without modifying the last searched cache."""
+    """Searches TMDB without modifying cache."""
     query = request.args.get('q', '')
     if not query:
         return jsonify([])
@@ -88,14 +89,27 @@ def search():
     results = data.get('results', [])
     return jsonify(results)
 
-@app.route('/api/track_click', methods=['POST'])
-def track_click():
-    """Saves a clicked movie/series into the last searched memory cache."""
+@app.route('/api/save_movie', methods=['POST'])
+def save_movie():
+    """Saves a movie into Saved Movies, placing it at rank #1."""
     item = request.get_json()
     if not item or 'id' not in item:
         return jsonify({"status": "error", "message": "Invalid item payload"}), 400
 
-    # Remove existing record if present to re-insert at the top (most recent)
+    global saved_movies_cache
+    # Remove existing record if present to re-insert at index 0 (rank 1)
+    saved_movies_cache = [c for c in saved_movies_cache if c.get('id') != item['id']]
+    saved_movies_cache.insert(0, item)
+
+    return jsonify({"status": "success", "saved_count": len(saved_movies_cache)})
+
+@app.route('/api/track_click', methods=['POST'])
+def track_click():
+    """Saves a clicked movie/series into the memory cache."""
+    item = request.get_json()
+    if not item or 'id' not in item:
+        return jsonify({"status": "error", "message": "Invalid item payload"}), 400
+
     global last_searched_cache
     last_searched_cache = [c for c in last_searched_cache if c.get('id') != item['id']]
     last_searched_cache.insert(0, item)
