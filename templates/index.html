@@ -292,7 +292,7 @@
             margin-left: 10px;
         }
 
-        /* --- REDESIGNED TV SERIES MODAL --- */
+        /* --- MODALS --- */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -363,7 +363,7 @@
             color: #fff;
         }
 
-        /* Modern Custom Season Dropdown Selector */
+        /* TV Dropdown Selector */
         .season-selector-wrapper {
             position: relative;
             width: 100%;
@@ -398,7 +398,6 @@
             box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.2);
         }
 
-        /* Dropdown Arrow Icon */
         .season-selector-wrapper::after {
             content: "";
             position: absolute;
@@ -487,6 +486,67 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
+
+        /* Movie Details Modal Styling */
+        .movie-details-body {
+            display: flex;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .movie-poster {
+            width: 180px;
+            border-radius: 6px;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+
+        .movie-info-details {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .meta-line {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        .age-badge {
+            border: 1px solid #aaa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .movie-desc {
+            font-size: 0.95rem;
+            color: #ddd;
+            line-height: 1.4;
+            margin-top: 5px;
+        }
+
+        .btn-action-modal {
+            background-color: #E50914;
+            color: #ffffff;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 15px;
+            align-self: flex-start;
+            transition: background-color 0.2s;
+        }
+
+        .btn-action-modal:hover {
+            background-color: #f40612;
+        }
     </style>
 </head>
 <body>
@@ -559,6 +619,30 @@
         </div>
     </div>
 
+    <!-- Movie Details Preview Modal -->
+    <div class="modal-overlay" id="movie-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-movie-title">Movie Title</h3>
+                <button class="modal-close" onclick="closeMovieModal()">✕</button>
+            </div>
+            <div class="movie-details-body">
+                <img id="modal-movie-poster" class="movie-poster" src="" alt="Poster">
+                <div class="movie-info-details">
+                    <div class="meta-line">
+                        <span id="modal-movie-rating" style="color: #46d369; font-weight: bold;"></span>
+                        <span id="modal-movie-year"></span>
+                        <span id="modal-movie-runtime"></span>
+                        <span id="modal-movie-age" class="age-badge"></span>
+                    </div>
+                    <p id="modal-movie-desc" class="movie-desc"></p>
+                    <button id="modal-movie-action-btn" class="btn-action-modal">Watch Now</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TV Series Modal -->
     <div class="modal-overlay" id="tv-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -577,22 +661,102 @@
     <script>
         const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500";
         const BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/original";
-        const TARGET_REDIRECT_URL = "http://127.0.0.1:1234/";
+        const TARGET_REDIRECT_URL = "http://192.168.1.12:1234/";
 
         let currentPage = 1;
         const maxPages = 50;
         let activeTvId = null;
 
+        function trackClick(item) {
+            fetch('/api/track_click', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item)
+            }).catch(err => console.error("Error tracking click:", err));
+        }
+
         function navigateToDetail(id) {
             window.location.href = `${TARGET_REDIRECT_URL}${id}`;
         }
 
+        function navigateToTvEpisode(seriesId, seasonNum, episodeNum) {
+            window.location.href = `${TARGET_REDIRECT_URL}${seriesId}/${seasonNum}/${episodeNum}`;
+        }
+
         function handleItemClick(item) {
+            trackClick(item);
+
             if (item.first_air_date || item.media_type === 'tv' || item.name) {
                 openTvModal(item.id);
             } else {
-                navigateToDetail(item.id);
+                openMovieModal(item.id);
             }
+        }
+
+        /* --- MOVIE MODAL LOGIC --- */
+        function openMovieModal(movieId) {
+            const modal = document.getElementById('movie-modal');
+            document.getElementById('modal-movie-title').innerText = "Loading...";
+            document.getElementById('modal-movie-desc').innerText = "";
+            document.getElementById('modal-movie-rating').innerText = "";
+            document.getElementById('modal-movie-year').innerText = "";
+            document.getElementById('modal-movie-runtime').innerText = "";
+            document.getElementById('modal-movie-age').innerText = "";
+            document.getElementById('modal-movie-poster').src = "https://via.placeholder.com/180x270?text=Loading";
+
+            modal.classList.add('active');
+
+            fetch(`/api/movie/${movieId}`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('modal-movie-title').innerText = data.title || "Movie Details";
+                    document.getElementById('modal-movie-desc').innerText = data.overview || "No description available.";
+                    
+                    // Rating calculation: rounded to nearest 10%, divided by 10 => x/10 format
+                    if (data.vote_average !== undefined) {
+                        let percent = Math.round((data.vote_average * 10) / 10) * 10;
+                        let ratingOut = percent / 10;
+                        document.getElementById('modal-movie-rating').innerText = `${ratingOut}/10 Rating`;
+                    }
+
+                    // Release Year
+                    if (data.release_date) {
+                        const year = data.release_date.split('-')[0];
+                        document.getElementById('modal-movie-year').innerText = `(${year})`;
+                    }
+
+                    // Runtime conversion to Xhr Ymins
+                    if (data.runtime) {
+                        const hrs = Math.floor(data.runtime / 60);
+                        const mins = data.runtime % 60;
+                        document.getElementById('modal-movie-runtime').innerText = `${hrs}hr ${mins}mins`;
+                    }
+
+                    // Age Rating logic
+                    const ageRating = data.age_rating || "NR";
+                    document.getElementById('modal-movie-age').innerText = ageRating;
+
+                    // Button text decision logic
+                    const restrictedRatings = ["15+", "16+", "R", "18+"];
+                    const btn = document.getElementById('modal-movie-action-btn');
+                    
+                    let isRestricted = false;
+                    restrictedRatings.forEach(r => {
+                        if (ageRating.includes(r)) isRestricted = true;
+                    });
+
+                    btn.innerText = isRestricted ? "Watch Now" : "Play";
+                    btn.onclick = () => navigateToDetail(movieId);
+
+                    // Poster Thumbnail
+                    if (data.poster_path) {
+                        document.getElementById('modal-movie-poster').src = `${IMAGE_BASE_URL}${data.poster_path}`;
+                    }
+                });
+        }
+
+        function closeMovieModal() {
+            document.getElementById('movie-modal').classList.remove('active');
         }
 
         /* --- TV MODAL LOGIC --- */
@@ -659,7 +823,7 @@
                                 <p>${ep.overview || 'No overview available.'}</p>
                             </div>
                         `;
-                        div.onclick = () => navigateToDetail(ep.id);
+                        div.onclick = () => navigateToTvEpisode(activeTvId, seasonNum, ep.episode_number);
                         episodeList.appendChild(div);
                     });
                 });
@@ -760,7 +924,7 @@
 
                     const startRank = (currentPage - 1) * 20 + 1;
                     list.forEach((item, index) => {
-                        grid.appendChild(createMovieCard(item, startRank + index));
+                        grid.appendChild(createMovieCard(item, category === 'last_searched' ? null : startRank + index));
                     });
 
                     renderPagination(category === 'last_searched' ? 1 : maxPages);
