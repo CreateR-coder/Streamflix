@@ -19,6 +19,21 @@
             padding-bottom: 50px;
         }
 
+        /* Keyboard Focus Indicator - High Visibility Spatial Nav */
+        body.keyboard-mode .is-focused {
+            outline: 3px solid #E50914 !important;
+            outline-offset: 4px !important;
+            transform: scale(1.05) !important;
+            z-index: 9999 !important;
+            transition: transform 0.15s ease, outline 0.15s ease !important;
+            box-shadow: 0 0 15px rgba(229, 9, 20, 0.8) !important;
+        }
+
+        /* Disable focus rings in mouse mode */
+        body:not(.keyboard-mode) *:focus {
+            outline: none;
+        }
+
         /* Navigation Bar & Tabs */
         .navbar {
             position: fixed;
@@ -53,6 +68,7 @@
             cursor: pointer;
             transition: color 0.3s, font-weight 0.2s;
             padding: 5px 0;
+            border-bottom: 2px solid transparent;
         }
 
         .nav-tab:hover, .nav-tab.active {
@@ -282,6 +298,52 @@
             background: #2e7d32 !important;
         }
 
+        /* KEYBOARD vs MOUSE STYLES */
+        body.keyboard-mode .card-save-btn,
+        body.keyboard-mode #hero-save-btn {
+            display: none !important;
+        }
+
+        body.keyboard-mode * {
+            pointer-events: none !important;
+        }
+
+        .category-select-mouse {
+            display: block;
+        }
+
+        .category-select-keyboard {
+            display: none;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        body.keyboard-mode .category-select-mouse {
+            display: none !important;
+        }
+
+        body.keyboard-mode .category-select-keyboard {
+            display: flex !important;
+        }
+
+        .cat-btn {
+            background-color: #222;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .cat-btn:hover, .cat-btn.active {
+            background-color: #E50914;
+            border-color: #E50914;
+        }
+
         /* Controls & Pagination */
         .controls-bar {
             display: flex;
@@ -310,10 +372,6 @@
         .search-input {
             width: 100%;
             max-width: 500px;
-        }
-
-        .custom-select:focus, .search-input:focus {
-            border-color: #E50914;
         }
 
         .pagination-container {
@@ -444,11 +502,6 @@
         .season-select-custom:hover {
             background-color: #2c2c2c;
             border-color: #555555;
-        }
-
-        .season-select-custom:focus {
-            border-color: #E50914;
-            box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.2);
         }
 
         .season-selector-wrapper::after {
@@ -626,7 +679,7 @@
         }
     </style>
 </head>
-<body>
+<body class="mouse-mode">
 
     <div class="navbar">
         <div class="brand-logo">STREAMFLIX</div>
@@ -673,15 +726,29 @@
     <div id="categories-tab" class="tab-content">
         <div class="section-container">
             <div class="controls-bar">
-                <select id="category-selector" class="custom-select" onchange="resetAndLoadCategory()">
-                    <option value="family_movies">Top 1000 Family Movies</option>
-                    <option value="action_movies">Top 1000 Action Movies</option>
-                    <option value="family_series">Top 1000 Family Series</option>
-                    <option value="action_series">Top 1000 Action Series</option>
-                    <option value="comedy_movies">Top 1000 Comedy Movies</option>
-                    <option value="comedy_series">Top 1000 Comedy Series</option>
-                    <option value="saved_movies">Saved Movies</option>
-                </select>
+                <!-- Mouse category selector -->
+                <div class="category-select-mouse">
+                    <select id="category-selector" class="custom-select" onchange="resetAndLoadCategory()">
+                        <option value="family_movies">Top 1000 Family Movies</option>
+                        <option value="action_movies">Top 1000 Action Movies</option>
+                        <option value="family_series">Top 1000 Family Series</option>
+                        <option value="action_series">Top 1000 Action Series</option>
+                        <option value="comedy_movies">Top 1000 Comedy Movies</option>
+                        <option value="comedy_series">Top 1000 Comedy Series</option>
+                        <option value="saved_movies">Saved Movies</option>
+                    </select>
+                </div>
+
+                <!-- Keyboard category selector -->
+                <div class="category-select-keyboard" id="category-keyboard-container">
+                    <button class="cat-btn active" data-val="family_movies" onclick="selectCategoryKb(this)">Top 1000 Family Movies</button>
+                    <button class="cat-btn" data-val="action_movies" onclick="selectCategoryKb(this)">Top 1000 Action Movies</button>
+                    <button class="cat-btn" data-val="family_series" onclick="selectCategoryKb(this)">Top 1000 Family Series</button>
+                    <button class="cat-btn" data-val="action_series" onclick="selectCategoryKb(this)">Top 1000 Action Series</button>
+                    <button class="cat-btn" data-val="comedy_movies" onclick="selectCategoryKb(this)">Top 1000 Comedy Movies</button>
+                    <button class="cat-btn" data-val="comedy_series" onclick="selectCategoryKb(this)">Top 1000 Comedy Series</button>
+                    <button class="cat-btn" data-val="saved_movies" onclick="selectCategoryKb(this)">Saved Movies</button>
+                </div>
             </div>
 
             <div class="pagination-container" id="pagination-top"></div>
@@ -749,10 +816,213 @@
         let currentPage = 1;
         const maxPages = 50;
         let activeTvId = null;
+        let selectedCategory = 'family_movies';
 
         // Tracks saved movie IDs on client side so button state persists
         const savedMovieIds = new Set();
 
+        /* --- 2D SPATIAL NAVIGATION SYSTEM --- */
+        let spatialKeyboardMode = false;
+        let focusedElement = null;
+        let focusableElementsList = [];
+
+        const FOCUSABLE_SELECTOR = '.nav-tab, .btn-play, .movie-card, .cat-btn, .page-btn, .search-input, .modal-close, .btn-action-modal, .btn-save-modal, .season-select-custom, .episode-item';
+
+        function isVisible(el) {
+            if (!el) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+            
+            // Exclude element if outside active tab or modal setup
+            const activeModal = document.querySelector('.modal-overlay.active');
+            if (activeModal) {
+                if (!activeModal.contains(el)) return false;
+            } else {
+                const activeTab = document.querySelector('.tab-content.active');
+                const isNav = el.closest('.navbar');
+                if (!isNav && activeTab && !activeTab.contains(el)) return false;
+            }
+
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        }
+
+        function updateFocusableList() {
+            const allElements = Array.from(document.querySelectorAll(FOCUSABLE_SELECTOR));
+            focusableElementsList = allElements.filter(isVisible);
+
+            // Re-validate current focus target
+            if (spatialKeyboardMode && focusedElement) {
+                if (!focusableElementsList.includes(focusedElement)) {
+                    setFocus(focusableElementsList[0] || null);
+                }
+            }
+        }
+
+        function setFocus(element) {
+            if (focusedElement) {
+                focusedElement.classList.remove('is-focused');
+            }
+
+            focusedElement = element;
+
+            if (focusedElement) {
+                focusedElement.classList.add('is-focused');
+                focusedElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+            }
+        }
+
+        function toggleSpatialKeyboardMode(enable) {
+            spatialKeyboardMode = enable !== undefined ? enable : !spatialKeyboardMode;
+
+            if (spatialKeyboardMode) {
+                document.body.classList.add('keyboard-mode');
+                document.body.classList.remove('mouse-mode');
+                updateFocusableList();
+
+                const activeModal = document.querySelector('.modal-overlay.active');
+                if (activeModal) {
+                    const firstModalEl = activeModal.querySelector(FOCUSABLE_SELECTOR);
+                    setFocus(firstModalEl || focusableElementsList[0]);
+                } else {
+                    const activeTabNav = document.querySelector('.nav-tab.active');
+                    const heroBtn = document.getElementById('hero-btn');
+                    const defaultTarget = activeTabNav || heroBtn || focusableElementsList[0];
+                    setFocus(defaultTarget);
+                }
+            } else {
+                document.body.classList.remove('keyboard-mode');
+                document.body.classList.add('mouse-mode');
+                if (focusedElement) {
+                    focusedElement.classList.remove('is-focused');
+                    focusedElement = null;
+                }
+            }
+        }
+
+        function navigate2D(direction) {
+            if (!spatialKeyboardMode || !focusedElement) return;
+
+            updateFocusableList();
+            const currentRect = focusedElement.getBoundingClientRect();
+            const currentCenter = {
+                x: currentRect.left + currentRect.width / 2,
+                y: currentRect.top + currentRect.height / 2
+            };
+
+            let bestCandidate = null;
+            let minDistance = Infinity;
+
+            focusableElementsList.forEach(el => {
+                if (el === focusedElement) return;
+
+                const rect = el.getBoundingClientRect();
+                const center = {
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2
+                };
+
+                const dx = center.x - currentCenter.x;
+                const dy = center.y - currentCenter.y;
+
+                let isValidDirection = false;
+                switch (direction) {
+                    case 'Left':
+                        isValidDirection = dx < -5;
+                        break;
+                    case 'Right':
+                        isValidDirection = dx > 5;
+                        break;
+                    case 'Up':
+                        isValidDirection = dy < -5;
+                        break;
+                    case 'Down':
+                        isValidDirection = dy > 5;
+                        break;
+                }
+
+                if (isValidDirection) {
+                    // Weighted Euclidean Distance calculation favoring primary axis direction
+                    const mainAxis = (direction === 'Left' || direction === 'Right') ? Math.abs(dx) : Math.abs(dy);
+                    const crossAxis = (direction === 'Left' || direction === 'Right') ? Math.abs(dy) : Math.abs(dx);
+                    const distance = Math.sqrt(mainAxis * mainAxis + (crossAxis * 2.5) * (crossAxis * 2.5));
+
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        bestCandidate = el;
+                    }
+                }
+            });
+
+            if (bestCandidate) {
+                setFocus(bestCandidate);
+            }
+        }
+
+        // Global Keyboard Interception Listener
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace') {
+                e.preventDefault();
+                toggleSpatialKeyboardMode();
+                return;
+            }
+
+            if (!spatialKeyboardMode) return;
+
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape'].includes(e.key)) {
+                e.preventDefault();
+            }
+
+            switch (e.key) {
+                case 'ArrowUp':
+                    navigate2D('Up');
+                    break;
+                case 'ArrowDown':
+                    navigate2D('Down');
+                    break;
+                case 'ArrowLeft':
+                    navigate2D('Left');
+                    break;
+                case 'ArrowRight':
+                    navigate2D('Right');
+                    break;
+                case 'Enter':
+                    if (focusedElement) {
+                        focusedElement.click();
+                        if (focusedElement.tagName === 'INPUT') {
+                            focusedElement.focus();
+                        }
+                    }
+                    break;
+                case 'Escape':
+                    const movieModal = document.getElementById('movie-modal');
+                    const tvModal = document.getElementById('tv-modal');
+                    if (movieModal.classList.contains('active')) {
+                        closeMovieModal();
+                    } else if (tvModal.classList.contains('active')) {
+                        closeModal();
+                    } else {
+                        window.history.back();
+                    }
+                    break;
+            }
+        });
+
+        // Dynamic MutationObserver for UI re-indexing
+        const observer = new MutationObserver(() => {
+            if (spatialKeyboardMode) {
+                updateFocusableList();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        window.addEventListener('mousemove', () => {
+            if (spatialKeyboardMode) {
+                toggleSpatialKeyboardMode(false);
+            }
+        });
+
+        /* --- EXISTING LOGIC & EVENT HANDLERS --- */
         function updateSaveButtonVisualState(btn, movieId) {
             if (!btn) return;
             if (savedMovieIds.has(movieId)) {
@@ -792,8 +1062,7 @@
             })
             .then(res => res.json())
             .then(data => {
-                const categorySelector = document.getElementById('category-selector');
-                if (categorySelector.value === 'saved_movies' && document.getElementById('categories-tab').classList.contains('active')) {
+                if (selectedCategory === 'saved_movies' && document.getElementById('categories-tab').classList.contains('active')) {
                     loadCategoryData();
                 }
             })
@@ -809,16 +1078,13 @@
         }
 
         function copyAndRedirect(targetUrl) {
-            // Strip the protocol prefix (e.g., "http://") to format target URL (e.g. "192.168.1.12:1234/1212763")
             const formattedUrl = targetUrl.replace(/^https?:\/\//, '');
 
-            // Copy to clipboard, then redirect
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(formattedUrl).finally(() => {
                     window.location.href = targetUrl;
                 });
             } else {
-                // Fallback for non-secure context
                 const textarea = document.createElement('textarea');
                 textarea.value = formattedUrl;
                 document.body.appendChild(textarea);
@@ -872,6 +1138,10 @@
 
             modal.classList.add('active');
 
+            if (spatialKeyboardMode) {
+                setTimeout(() => setFocus(document.getElementById('modal-movie-action-btn')), 50);
+            }
+
             fetch(`/api/movie/${movieId}`)
                 .then(res => res.json())
                 .then(data => {
@@ -917,6 +1187,7 @@
 
         function closeMovieModal() {
             document.getElementById('movie-modal').classList.remove('active');
+            if (spatialKeyboardMode) updateFocusableList();
         }
 
         /* --- TV MODAL LOGIC --- */
@@ -986,11 +1257,19 @@
                         div.onclick = () => navigateToTvEpisode(activeTvId, seasonNum, ep.episode_number);
                         episodeList.appendChild(div);
                     });
+
+                    if (spatialKeyboardMode) {
+                        setTimeout(() => {
+                            const firstEp = episodeList.querySelector('.episode-item');
+                            if (firstEp) setFocus(firstEp);
+                        }, 50);
+                    }
                 });
         }
 
         function closeModal() {
             document.getElementById('tv-modal').classList.remove('active');
+            if (spatialKeyboardMode) updateFocusableList();
         }
 
         /* --- UI & TAB SWITCHING --- */
@@ -999,10 +1278,14 @@
             document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
 
             document.getElementById(tabId).classList.add('active');
-            evt.target.classList.add('active');
+            if (evt && evt.target) evt.target.classList.add('active');
 
             if (tabId === 'trending-tab') loadTop10();
             if (tabId === 'categories-tab') resetAndLoadCategory();
+
+            if (spatialKeyboardMode) {
+                setTimeout(updateFocusableList, 50);
+            }
         }
 
         function createMovieCard(item, rank = null, isHomeRow = false) {
@@ -1024,6 +1307,7 @@
             saveBtn.onclick = (e) => saveMovie(item, saveBtn, e);
 
             card.onclick = () => handleItemClick(item);
+
             return card;
         }
 
@@ -1075,13 +1359,25 @@
             loadCategoryData();
         }
 
+        function selectCategoryKb(btnEl) {
+            document.querySelectorAll('#category-keyboard-container .cat-btn').forEach(btn => btn.classList.remove('active'));
+            btnEl.classList.add('active');
+            
+            selectedCategory = btnEl.getAttribute('data-val');
+            document.getElementById('category-selector').value = selectedCategory;
+            resetAndLoadCategory();
+        }
+
         // Categories Tab Loader
         function loadCategoryData() {
-            const category = document.getElementById('category-selector').value;
+            if (document.body.classList.contains('mouse-mode')) {
+                selectedCategory = document.getElementById('category-selector').value;
+            }
+
             const grid = document.getElementById('category-grid');
             grid.innerHTML = '<p style="color:#aaa;">Loading titles...</p>';
 
-            fetch(`/api/category/${category}?page=${currentPage}`)
+            fetch(`/api/category/${selectedCategory}?page=${currentPage}`)
                 .then(res => res.json())
                 .then(data => {
                     grid.innerHTML = '';
@@ -1093,7 +1389,7 @@
                         return;
                     }
 
-                    if (category === 'saved_movies') {
+                    if (selectedCategory === 'saved_movies') {
                         list.forEach(m => savedMovieIds.add(m.id));
                     }
 
@@ -1102,7 +1398,7 @@
                         grid.appendChild(createMovieCard(item, startRank + index));
                     });
 
-                    renderPagination(category === 'saved_movies' ? 1 : maxPages);
+                    renderPagination(selectedCategory === 'saved_movies' ? 1 : maxPages);
                 })
                 .catch(err => {
                     grid.innerHTML = '<p style="color:#E50914;">Failed to load items. Please try again.</p>';
