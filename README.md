@@ -79,4 +79,6 @@ To use this to its full potential run Streamflix and addon simultaneously and go
 <br>
 <br>
 This uses AI btw, specifically Gemini, this has been vibe coded for a few hours.
+Also I don't care about y'all using my TMDB API key, its free so it doesn't matter
+
 
