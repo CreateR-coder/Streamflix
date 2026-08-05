@@ -1,6 +1,8 @@
 # Streamflix
-Currently on v1.4.1
-Just view movies and series on TMDB using this. Its a python script and it requires python 3.14.0 (from python.org) to work properly.
+Currently on v1.4.1 <br>
+Just view movies and series on TMDB using this. Its a python script and it requires python 3.14.0 (from python.org) to work properly. <br>
+BEFORE YOU SUE ME FOR THIS:
+You can only view movies, you can't play them for free using this python app
 <br>
 <br>
 Addon: https://github.com/CreateR-coder/Streamflix-Addon/
