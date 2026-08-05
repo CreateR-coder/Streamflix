@@ -1,173 +1,147 @@
-from flask import Flask, render_template, jsonify, request
+import os
 import requests
+from flask import Flask, render_template, request, jsonify
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 
 # TMDB Configuration
-API_KEY = "6363323958264147b046d7f77a16d48b"
+API_KEY = "6363323958264147b046d7f77a16d48b" # I hope this doesn't reveal stuff about me 
 BASE_URL = "https://api.themoviedb.org/3"
 
-# In-memory storage for saved movies and last clicked/viewed items
-saved_movies_cache = []
-last_searched_cache = []
+# In-memory storage for saved movies and click tracking
+saved_movies_db = {}
+click_logs = []
 
-def fetch_tmdb(endpoint, params=None):
+def tmdb_get(endpoint, params=None):
+    """Helper function to perform GET requests to TMDB API."""
     if params is None:
         params = {}
     params['api_key'] = API_KEY
     try:
-        response = requests.get(f"{BASE_URL}{endpoint}", params=params, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"Error fetching from TMDB: {e}")
-    return {}
+        response = requests.get(f"{BASE_URL}{endpoint}", params=params, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print(f"TMDB Request Error: {e}")
+        return None
 
 @app.route('/')
-def home():
+def index():
     return render_template('index.html')
 
-@app.route('/api/home')
+@app.route('/api/home', methods=['GET'])
 def get_home_data():
-    """Returns content for the main Home tab."""
-    trending_data = fetch_tmdb("/trending/movie/week")
-    top_rated_data = fetch_tmdb("/movie/top_rated")
-    action_data = fetch_tmdb("/discover/movie", {"with_genres": "28"})
+    trending = tmdb_get('/trending/movie/day')
+    top_rated = tmdb_get('/movie/top_rated')
+    action = tmdb_get('/discover/movie', {'with_genres': '28', 'sort_by': 'popularity.desc'})
 
     return jsonify({
-        "trending": trending_data.get('results', []),
-        "top_rated": top_rated_data.get('results', []),
-        "action": action_data.get('results', [])
+        'trending': trending.get('results', []) if trending else [],
+        'top_rated': top_rated.get('results', []) if top_rated else [],
+        'action': action.get('results', []) if action else []
     })
 
-@app.route('/api/top10')
+@app.route('/api/top10', methods=['GET'])
 def get_top10():
-    """Returns the Top 10 Trending titles for today."""
-    data = fetch_tmdb("/trending/all/day")
-    results = data.get('results', [])
+    trending = tmdb_get('/trending/all/day')
+    results = trending.get('results', []) if trending else []
     return jsonify(results[:10])
 
-@app.route('/api/category/<cat_type>')
-def get_category(cat_type):
-    """Fetches a single page of 20 items using TMDB pagination."""
+@app.route('/api/category/<category_name>', methods=['GET'])
+def get_category(category_name):
     page = request.args.get('page', 1, type=int)
 
-    category_map = {
-        # Movies: Genres (Family: 10751, Action: 28, Comedy: 35)
-        "family_movies": ("/discover/movie", {"with_genres": "10751", "sort_by": "popularity.desc"}),
-        "action_movies": ("/discover/movie", {"with_genres": "28", "sort_by": "popularity.desc"}),
-        "comedy_movies": ("/discover/movie", {"with_genres": "35", "sort_by": "popularity.desc"}),
-        
-        # Series/TV: Genres (Family: 10751, Action & Adventure: 10759, Comedy: 35)
-        "family_series": ("/discover/tv", {"with_genres": "10751", "sort_by": "popularity.desc"}),
-        "action_series": ("/discover/tv", {"with_genres": "10759", "sort_by": "popularity.desc"}),
-        "comedy_series": ("/discover/tv", {"with_genres": "35", "sort_by": "popularity.desc"})
+    if category_name == 'saved_movies':
+        saved_list = list(saved_movies_db.values())
+        return jsonify({'results': saved_list, 'page': 1, 'total_pages': 1})
+
+    category_mapping = {
+        'family_movies': ('/discover/movie', {'with_genres': '10751', 'sort_by': 'popularity.desc'}),
+        'action_movies': ('/discover/movie', {'with_genres': '28', 'sort_by': 'popularity.desc'}),
+        'comedy_movies': ('/discover/movie', {'with_genres': '35', 'sort_by': 'popularity.desc'}),
+        'family_series': ('/discover/tv', {'with_genres': '10751', 'sort_by': 'popularity.desc'}),
+        'action_series': ('/discover/tv', {'with_genres': '10759', 'sort_by': 'popularity.desc'}),
+        'comedy_series': ('/discover/tv', {'with_genres': '35', 'sort_by': 'popularity.desc'})
     }
 
-    if cat_type == "saved_movies":
-        return jsonify({"results": saved_movies_cache})
+    if category_name not in category_mapping:
+        return jsonify({'results': [], 'page': 1, 'total_pages': 0}), 400
 
-    if cat_type in category_map:
-        endpoint, params = category_map[cat_type]
-        params['page'] = page
-        data = fetch_tmdb(endpoint, params)
-        return jsonify({
-            "results": data.get('results', []),
-            "total_pages": min(data.get('total_pages', 1), 50)
-        })
+    endpoint, params = category_mapping[category_name]
+    params['page'] = page
+    data = tmdb_get(endpoint, params)
 
-    return jsonify({"results": []})
+    return jsonify({
+        'results': data.get('results', []) if data else [],
+        'page': data.get('page', 1) if data else 1,
+        'total_pages': min(data.get('total_pages', 1), 50) if data else 1
+    })
 
-@app.route('/api/search')
+@app.route('/api/movie/<int:movie_id>', methods=['GET'])
+def get_movie_details(movie_id):
+    movie_data = tmdb_get(f'/movie/{movie_id}', {'append_to_response': 'release_dates'})
+    if not movie_data:
+        return jsonify({'error': 'Movie not found'}), 404
+
+    # Extract age rating from certification data
+    age_rating = "NR"
+    release_dates = movie_data.get('release_dates', {}).get('results', [])
+    for country in release_dates:
+        if country.get('iso_3166_1') == 'US':
+            for release in country.get('release_dates', []):
+                cert = release.get('certification')
+                if cert:
+                    age_rating = cert
+                    break
+
+    movie_data['age_rating'] = age_rating
+    return jsonify(movie_data)
+
+@app.route('/api/tv/<int:tv_id>/seasons', methods=['GET'])
+def get_tv_seasons(tv_id):
+    tv_data = tmdb_get(f'/tv/{tv_id}')
+    if not tv_data:
+        return jsonify({'error': 'TV show not found'}), 404
+    return jsonify(tv_data)
+
+@app.route('/api/tv/<int:tv_id>/season/<int:season_num>', methods=['GET'])
+def get_tv_season_details(tv_id, season_num):
+    season_data = tmdb_get(f'/tv/{tv_id}/season/{season_num}')
+    if not season_data:
+        return jsonify({'error': 'Season not found'}), 404
+    return jsonify(season_data)
+
+@app.route('/api/search', methods=['GET'])
 def search():
-    """Searches TMDB without modifying cache."""
     query = request.args.get('q', '')
     if not query:
         return jsonify([])
 
-    data = fetch_tmdb("/search/multi", {"query": query})
-    results = data.get('results', [])
-    return jsonify(results)
+    search_data = tmdb_get('/search/multi', {'query': query})
+    results = search_data.get('results', []) if search_data else []
+    
+    # Filter out items without post-media types like person profiles
+    filtered_results = [
+        item for item in results 
+        if item.get('media_type') in ['movie', 'tv'] or 'title' in item or 'name' in item
+    ]
+    return jsonify(filtered_results)
 
 @app.route('/api/save_movie', methods=['POST'])
 def save_movie():
-    """Saves a movie into Saved Movies, placing it at rank #1."""
     item = request.get_json()
     if not item or 'id' not in item:
-        return jsonify({"status": "error", "message": "Invalid item payload"}), 400
+        return jsonify({'status': 'error', 'message': 'Invalid payload'}), 400
 
-    global saved_movies_cache
-    # Remove existing record if present to re-insert at index 0 (rank 1)
-    saved_movies_cache = [c for c in saved_movies_cache if c.get('id') != item['id']]
-    saved_movies_cache.insert(0, item)
-
-    return jsonify({"status": "success", "saved_count": len(saved_movies_cache)})
+    saved_movies_db[item['id']] = item
+    return jsonify({'status': 'success', 'saved_id': item['id']})
 
 @app.route('/api/track_click', methods=['POST'])
 def track_click():
-    """Saves a clicked movie/series into the memory cache."""
     item = request.get_json()
-    if not item or 'id' not in item:
-        return jsonify({"status": "error", "message": "Invalid item payload"}), 400
-
-    global last_searched_cache
-    last_searched_cache = [c for c in last_searched_cache if c.get('id') != item['id']]
-    last_searched_cache.insert(0, item)
-
-    return jsonify({"status": "success"})
-
-# --- MOVIE DETAILS ENDPOINT ---
-
-@app.route('/api/movie/<int:movie_id>')
-def get_movie_details(movie_id):
-    """Fetches full movie details including runtime and US release certification rating."""
-    data = fetch_tmdb(f"/movie/{movie_id}", {"append_to_response": "release_dates"})
-    
-    # Extract US Content Rating (e.g. PG-13, R, PG)
-    age_rating = "NR"
-    release_dates = data.get('release_dates', {}).get('results', [])
-    for country_data in release_dates:
-        if country_data.get('iso_3166_1') == 'US':
-            for r in country_data.get('release_dates', []):
-                cert = r.get('certification')
-                if cert:
-                    age_rating = cert
-                    break
-            break
-
-    return jsonify({
-        "id": data.get("id"),
-        "title": data.get("title"),
-        "overview": data.get("overview"),
-        "vote_average": data.get("vote_average", 0),
-        "release_date": data.get("release_date"),
-        "runtime": data.get("runtime", 0),
-        "poster_path": data.get("poster_path"),
-        "age_rating": age_rating
-    })
-
-# --- TV SHOW SEASON & EPISODE ENDPOINTS ---
-
-@app.route('/api/tv/<int:tv_id>/seasons')
-def get_tv_seasons(tv_id):
-    """Fetches details for a TV series, including its seasons list."""
-    data = fetch_tmdb(f"/tv/{tv_id}")
-    seasons = data.get('seasons', [])
-    valid_seasons = [s for s in seasons if s.get('season_number', 0) > 0]
-    return jsonify({
-        "name": data.get('name', 'TV Series'),
-        "seasons": valid_seasons
-    })
-
-@app.route('/api/tv/<int:tv_id>/season/<int:season_num>')
-def get_tv_episodes(tv_id, season_num):
-    """Fetches all episodes for a specific season of a TV series."""
-    data = fetch_tmdb(f"/tv/{tv_id}/season/{season_num}")
-    episodes = data.get('episodes', [])
-    return jsonify({
-        "season_number": season_num,
-        "episodes": episodes
-    })
+    if item:
+        click_logs.append(item)
+    return jsonify({'status': 'logged'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
