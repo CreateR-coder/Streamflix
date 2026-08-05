@@ -750,7 +750,7 @@
         const maxPages = 50;
         let activeTvId = null;
 
-        // Tracks saved movie IDs on client side so button state persists ✓
+        // Tracks saved movie IDs on client side so button state persists
         const savedMovieIds = new Set();
 
         function updateSaveButtonVisualState(btn, movieId) {
@@ -808,12 +808,39 @@
             }).catch(err => console.error("Error tracking click:", err));
         }
 
+        function copyAndRedirect(targetUrl) {
+            // Strip the protocol prefix (e.g., "http://") to format target URL (e.g. "192.168.1.12:1234/1212763")
+            const formattedUrl = targetUrl.replace(/^https?:\/\//, '');
+
+            // Copy to clipboard, then redirect
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(formattedUrl).finally(() => {
+                    window.location.href = targetUrl;
+                });
+            } else {
+                // Fallback for non-secure context
+                const textarea = document.createElement('textarea');
+                textarea.value = formattedUrl;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                } catch (err) {
+                    console.error('Clipboard copy failed', err);
+                }
+                document.body.removeChild(textarea);
+                window.location.href = targetUrl;
+            }
+        }
+
         function navigateToDetail(id) {
-            window.location.href = `${TARGET_REDIRECT_URL}${id}`;
+            const url = `${TARGET_REDIRECT_URL}${id}`;
+            copyAndRedirect(url);
         }
 
         function navigateToTvEpisode(seriesId, seasonNum, episodeNum) {
-            window.location.href = `${TARGET_REDIRECT_URL}${seriesId}/${seasonNum}/${episodeNum}`;
+            const url = `${TARGET_REDIRECT_URL}${seriesId}/${seasonNum}/${episodeNum}`;
+            copyAndRedirect(url);
         }
 
         function handleItemClick(item) {
