@@ -61,6 +61,11 @@ To unlock full capabilities, run Streamflix together with the official addon:
 
 ---
 
+## Note
+
+It notes that I do frequent updates but as of 05 08 2026 (Fifth/July/Twenty-Twenty-Six) 16:30 PM, updates will be rare or discontinued since last few updates have been taking me hours for simple stuff. Also I won't be online on github that frequently either so the only way to really contact me is using YouTube since that's the only social media that I really use.
+
+
 ## License
 
 Distributed under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
