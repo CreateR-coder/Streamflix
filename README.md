@@ -1,4 +1,5 @@
 # Streamflix
+Currently on v1.4.1
 Just view movies and series on TMDB using this. Its a python script and it requires python 3.14.0 (from python.org) to work properly.
 <br>
 <br>
